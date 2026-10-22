@@ -15,6 +15,9 @@ const settingsSchema = z.object({
       z.object({ mode: z.literal("list"), repos: z.array(z.string()) }),
     ])
     .optional(),
+  /** What the bot posted on its own, newest last, so a reply in one of those
+   *  threads starts with the post it replies to. */
+  posts: z.array(z.object({ channel: z.string(), ts: z.string(), text: z.string() })).optional(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 
