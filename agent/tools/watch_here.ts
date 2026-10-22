@@ -9,9 +9,7 @@ import { postToChannel } from "#lib/slack.ts";
 // Posted the way a real alert is, so setup proves alerts can reach the channel.
 const SAMPLE_ALERT = [
   "*Sample alert, nothing to fix.* Real alerts look like this:",
-  "High: code injection in gatsby-transformer-remark (CVE-2023-22491, GHSA-7ch4-rr99-cqcw).",
-  "acme/site uses gatsby-transformer-remark 2.6.22 directly; OSV confirms that version is affected.",
-  "Fix: upgrade to 5.25.1 or later. It's a major-version jump, so it may need code changes.",
+  "Heads up, worth fixing today: a high-severity flaw in gatsby-transformer-remark lets crafted Markdown run code during your build (CVE-2023-22491). acme/site uses 2.6.22 directly, and OSV confirms it's affected. The fix is 5.25.1, a major-version jump, so expect some code changes.",
 ].join("\n");
 
 export default defineTool({
@@ -27,14 +25,14 @@ export default defineTool({
     if (!url) return { ok: false, why: "This deployment doesn't know its public URL." };
     await updateSettings({ alertChannelId: channelId });
     const ambush = await connectToAmbush(url);
-    await postToChannel(channelId, SAMPLE_ALERT);
+    await postToChannel(channelId, SAMPLE_ALERT, "sample");
     return {
       ok: true,
       alertChannelId: channelId,
       sampleAlertPosted: true,
       repoCount: (await availableRepos()).length,
       ambush,
-      next: "Call choose_repos so they pick which repos to watch.",
+      next: "Call choose_repos, then choose_alerts.",
     };
   },
 });

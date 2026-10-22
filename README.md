@@ -7,9 +7,11 @@ Dependency Watch tells your team in Slack when a security advisory touches a rep
 ## Set it up
 
 1. Click **Deploy with Vercel**. Approve Slack, and approve GitHub for the repos you might want watched. Paste an [Ambush API key](https://app.ambush.ai/api-keys) when asked.
-2. In Slack, invite the app to the channel alerts should go to and say `@Dependency Watch post alerts here`. It connects itself to Ambush, posts a sample alert so you can see what one looks like, and asks which repos to watch: the ones with dependencies it can read, all of them, or names you type.
+2. In Slack, invite the app to the channel alerts should go to and say `@Dependency Watch post alerts here`. It connects itself to Ambush, posts a sample alert so you can see what one looks like, and asks two things: which repos to watch (the ones with dependencies it can read, all of them, or names you type), and what to alert on: advisories for your packages, or those plus major security incidents.
 
-Alerts then post to that channel on their own. Ask it anything by mentioning it, such as `@Dependency Watch are we affected by CVE-2026-12345?`, or `@Dependency Watch watch only storefront and api` to change the repos.
+Major incidents are the few a week a team drops everything for, like a hosting platform breach or an exploited flaw in PHP, even when none of your packages is involved. The bot creates a "Major security incidents" stream in your Ambush account for them, checks each one again before saying anything, and tells you whether it touches your repos. For the first week it holds incident posts back; ask `@Dependency Watch what would you have posted?` to see them.
+
+Alerts then post to that channel on their own. Ask it anything by mentioning it, such as `@Dependency Watch are we affected by CVE-2026-12345?`, `@Dependency Watch watch only storefront and api`, or `@Dependency Watch just my packages` to turn incidents off. Mention it in an alert's thread to ask about that alert.
 
 For a private repo, turn on its dependency graph (Settings, then Advanced Security); GitHub builds it for public repos on its own.
 
@@ -24,8 +26,11 @@ The model runs through Vercel AI Gateway, so your Vercel team needs AI Gateway c
 | `agent/tools/uses.ts`, `repos.ts` | Read each repo's dependencies from GitHub's dependency graph (SBOM) |
 | `agent/tools/osv_check.ts` | Asks OSV.dev whether an exact version is affected |
 | `agent/tools/notify.ts` | Posts an alert to the chosen channel; the only way an alert reaches anyone |
-| `agent/tools/watch_here.ts` | Picks the alert channel, creates the Ambush webhook and subscription, and posts the sample alert |
+| `agent/tools/watch_here.ts` | Picks the alert channel, creates the Ambush webhook, and posts the sample alert |
 | `agent/tools/choose_repos.ts`, `set_repos.ts` | Which repos to watch, asked with buttons or named in a message |
+| `agent/tools/choose_alerts.ts`, `set_alerts.ts` | Packages only, or packages and major incidents; subscribes or pauses each stream |
+| `agent/tools/shadow_log.ts` | The incident posts held back during the first week |
+| `agent/lib/incidents.ts` | The major-incident stream's prompt |
 | `agent/lib/settings.ts` | The alert channel, watched repos and webhook secret, in a private Vercel Blob store |
 
 ## Run it locally

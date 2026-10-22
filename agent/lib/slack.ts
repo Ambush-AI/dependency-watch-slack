@@ -9,7 +9,11 @@ const KEEP_POSTS = 50;
 
 /** Posts outside any Slack conversation, as alerts do, and remembers the post
  *  so a reply in its thread can start from it. */
-export async function postToChannel(channel: string, text: string): Promise<void> {
+export async function postToChannel(
+  channel: string,
+  text: string,
+  kind: "package" | "incident" | "sample",
+): Promise<void> {
   const response = await callSlackApi({
     botToken: slackCredentials.botToken,
     operation: "chat.postMessage",
@@ -19,7 +23,9 @@ export async function postToChannel(channel: string, text: string): Promise<void
   const ts = typeof response.ts === "string" ? response.ts : undefined;
   if (!ts) return;
   const { posts = [] } = await readSettings();
-  await updateSettings({ posts: [...posts, { channel, ts, text }].slice(-KEEP_POSTS) });
+  await updateSettings({
+    posts: [...posts, { channel, ts, text, kind, at: new Date().toISOString() }].slice(-KEEP_POSTS),
+  });
 }
 
 /** The bot's own post that starts this thread, if it has one. */

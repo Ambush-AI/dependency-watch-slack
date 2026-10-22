@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { ADVISORY_STREAM, AMBUSH_API } from "#lib/constants.ts";
+import { INCIDENT_STREAM_NAME, INCIDENT_STREAM_PROMPT, SHADOW_DAYS } from "#lib/incidents.ts";
 import { readSettings, updateSettings } from "#lib/settings.ts";
 
 async function ambush(path: string, init: { method?: string; body?: unknown } = {}) {
@@ -27,9 +28,8 @@ const channelsSchema = z.object({
 });
 
 /**
- * Points an Ambush webhook at this deployment and subscribes it to Package
- * Security Advisories. Safe to run again: it reuses the webhook it made, and
- * an existing subscription counts as done.
+ * Points an Ambush webhook at this deployment. Safe to run again: it reuses
+ * the webhook it made. What the webhook hears is `setAlertTopics`.
  */
 export async function connectToAmbush(url: string): Promise<{ webhookId: string; created: boolean }> {
   let settings = await readSettings();
@@ -64,13 +64,70 @@ export async function connectToAmbush(url: string): Promise<{ webhookId: string;
     created = true;
     await updateSettings({ webhookId });
   }
-
-  const subscribe = await ambush(`/feed-templates/${ADVISORY_STREAM}/subscriptions`, {
-    method: "POST",
-    body: { emission_channel_id: webhookId, minimum_delivery_interval_minutes: 1 },
-  });
-  if (!subscribe.ok && subscribe.status !== 409) {
-    throw await failure(subscribe, "subscribing to Package Security Advisories");
-  }
   return { webhookId, created };
+}
+
+export interface AlertTopics {
+  readonly packages: boolean;
+  readonly incidents: boolean;
+}
+
+/** A one-minute interval is what makes Ambush retry a delivery we miss. */
+const ROUTE = { minimum_delivery_interval_minutes: 1 };
+
+async function setPackages(webhookId: string, on: boolean) {
+  const path = `/feed-templates/${ADVISORY_STREAM}/subscriptions`;
+  const response = on
+    ? await ambush(path, { method: "POST", body: { emission_channel_id: webhookId, ...ROUTE } })
+    : await ambush(`${path}/${webhookId}`, { method: "DELETE" });
+  if (!response.ok && response.status !== 409 && response.status !== 404) {
+    throw await failure(response, `${on ? "subscribing to" : "unsubscribing from"} Package Security Advisories`);
+  }
+}
+
+/** Creates the person's own incident stream the first time, and pauses or
+ *  resumes it after that. */
+async function setIncidents(webhookId: string, on: boolean): Promise<string | undefined> {
+  let { incidentFeedId } = await readSettings();
+  if (incidentFeedId && (await ambush(`/feeds/${incidentFeedId}`)).status === 404) incidentFeedId = undefined;
+  if (!on) {
+    if (incidentFeedId) {
+      const paused = await ambush(`/feeds/${incidentFeedId}`, { method: "PATCH", body: { status: "paused" } });
+      if (!paused.ok) throw await failure(paused, "pausing the incident stream");
+    }
+    return incidentFeedId;
+  }
+  if (!incidentFeedId) {
+    const created = await ambush("/feeds", {
+      method: "POST",
+      body: { name: INCIDENT_STREAM_NAME, prompt: INCIDENT_STREAM_PROMPT },
+    });
+    if (!created.ok) throw await failure(created, "creating the incident stream");
+    incidentFeedId = z.object({ feed_id: z.string() }).parse(await created.json()).feed_id;
+    await updateSettings({ incidentFeedId });
+  } else {
+    const resumed = await ambush(`/feeds/${incidentFeedId}`, { method: "PATCH", body: { status: "active" } });
+    if (!resumed.ok) throw await failure(resumed, "resuming the incident stream");
+  }
+  // Routing the same pair again restores the route.
+  const routed = await ambush(`/feeds/${incidentFeedId}/channels`, {
+    method: "POST",
+    body: { emission_channel_id: webhookId, ...ROUTE },
+  });
+  if (!routed.ok && routed.status !== 409) throw await failure(routed, "routing the incident stream");
+  return incidentFeedId;
+}
+
+/** Subscribes the webhook to what the team chose, and stops what they didn't. */
+export async function setAlertTopics(topics: AlertTopics): Promise<AlertTopics & { shadowUntil?: string }> {
+  const settings = await readSettings();
+  if (!settings.webhookId) throw new Error("Set up the channel first: say 'post alerts here'.");
+  await setPackages(settings.webhookId, topics.packages);
+  await setIncidents(settings.webhookId, topics.incidents);
+  const shadowUntil =
+    topics.incidents && !settings.incidentShadowUntil
+      ? new Date(Date.now() + SHADOW_DAYS * 86_400_000).toISOString()
+      : settings.incidentShadowUntil;
+  await updateSettings({ alerts: topics, incidentShadowUntil: shadowUntil });
+  return { ...topics, ...(topics.incidents && shadowUntil ? { shadowUntil } : {}) };
 }

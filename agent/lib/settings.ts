@@ -17,7 +17,23 @@ const settingsSchema = z.object({
     .optional(),
   /** What the bot posted on its own, newest last, so a reply in one of those
    *  threads starts with the post it replies to. */
-  posts: z.array(z.object({ channel: z.string(), ts: z.string(), text: z.string() })).optional(),
+  posts: z
+    .array(
+      z.object({
+        channel: z.string(),
+        ts: z.string(),
+        text: z.string(),
+        kind: z.enum(["package", "incident", "sample"]).optional(),
+        at: z.string().optional(),
+      }),
+    )
+    .optional(),
+  /** What to alert on. Unset means packages only, as before this was asked. */
+  alerts: z.object({ packages: z.boolean(), incidents: z.boolean() }).optional(),
+  incidentFeedId: z.string().optional(),
+  /** Until then, incident posts go to `shadowLog` instead of Slack. */
+  incidentShadowUntil: z.string().optional(),
+  shadowLog: z.array(z.object({ at: z.string(), text: z.string() })).optional(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 
